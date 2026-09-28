@@ -13,17 +13,17 @@ type Config struct {
 	Current_user_name string
 }
 
+// Config related functions
 func getConfigFilePath() string {
 	confFilePath, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	confFilePath += "/Documents/Projects/go-tutorials/Gator/" + fileName
-	return confFilePath
+	return confFilePath + "/" + fileName
 }
 
-func Read() Config {
+func Read() *Config {
 	// Get the file path
 	confFilePath := getConfigFilePath()
 
@@ -33,26 +33,30 @@ func Read() Config {
 
 	if err != nil {
 		log.Fatal(err)
+		return nil
 	}
 
 	// Parse it into the Config struct
 	if err = json.Unmarshal(fileContents, &conf); err != nil {
 		log.Fatal(err)
+		return nil
 	}
 
-	return conf
+	return &conf
 }
 
-func (c *Config) SetUser(username string) {
+func (c *Config) SetUser(username string) error {
 	c.Current_user_name = username
 
-	err := writeConfigFile(*c)
+	err := writeConfigFile(c)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+
+	return nil
 }
 
-func writeConfigFile(c Config) error {
+func writeConfigFile(c *Config) error {
 	// Serialize Config struct
 	fileContents, err := json.Marshal(c)
 	if err != nil {
