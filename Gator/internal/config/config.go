@@ -58,7 +58,7 @@ func (c *Config) SetUser(username string) error {
 
 func writeConfigFile(c *Config) error {
 	// Serialize Config struct
-	fileContents, err := json.Marshal(c)
+	fileContents, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}

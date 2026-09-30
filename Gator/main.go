@@ -1,13 +1,18 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 
-	config "github.com/Maxy-Maxwell/go-tutorials/Gator/internal"
+	config "github.com/Maxy-Maxwell/go-tutorials/Gator/internal/config"
+	"github.com/Maxy-Maxwell/go-tutorials/Gator/internal/database"
+
+	_ "github.com/lib/pq"
 )
 
 func main() {
+
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -15,9 +20,15 @@ func main() {
 }
 
 func run() error {
+	// Get Config for database
+	c := config.Read()
+
+	// Open database
+	db, err := sql.Open("postgres", c.Db_url)
+
 	// Bring state into memory
-	s := state{config.Read()}
-	if s.c == nil {
+	s := state{cfg: c, db: database.New(db)}
+	if s.cfg == nil {
 		return fmt.Errorf("Failed to read config file.")
 	}
 
@@ -40,9 +51,10 @@ func run() error {
 	}
 
 	// Run handler (command with args)
-	err := handler(&s, cmd)
+	err = handler(&s, cmd)
 	if err != nil {
-		return fmt.Errorf("Failed to run command: %v, with args: %v", cmd.name, cmd.arguments)
+		fmt.Printf("Failed to run command: %v, with args: %v\n", cmd.name, cmd.arguments)
+		return fmt.Errorf("%v", err.Error())
 	}
 
 	return nil
@@ -56,7 +68,12 @@ func prettyPrintConfig(c *config.Config) {
 func instantiateCommands() commands {
 	cmds := commands{
 		cmdNameToFunc: map[string]func(s *state, cmd command) error{
-			"login": handlerLogin,
+			"login":    handlerLogin,
+			"register": handlerRegister,
+			"reset":    handlerReset,
+			"users":    handlerUsers,
+			"agg":      handlerAgg,
+			"addfeed":  handlerAddFeed,
 		},
 	}
 

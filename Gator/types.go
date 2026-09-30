@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 
-	config "github.com/Maxy-Maxwell/go-tutorials/Gator/internal"
+	config "github.com/Maxy-Maxwell/go-tutorials/Gator/internal/config"
+	"github.com/Maxy-Maxwell/go-tutorials/Gator/internal/database"
 )
 
 type state struct {
-	c *config.Config
+	cfg *config.Config
+	db  *database.Queries
 }
 
 type command struct {
