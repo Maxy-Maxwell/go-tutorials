@@ -74,6 +74,7 @@ func instantiateCommands() commands {
 			"users":    handlerUsers,
 			"agg":      handlerAgg,
 			"addfeed":  handlerAddFeed,
+			"feeds":    handlerFeeds,
 		},
 	}
 
