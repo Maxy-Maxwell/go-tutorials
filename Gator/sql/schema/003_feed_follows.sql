@@ -11,7 +11,8 @@ CREATE TABLE feed_follows (
   feed_id UUID,
   CONSTRAINT fk_feed_id
     FOREIGN KEY (feed_id)
-    REFERENCES feeds(id),
+    REFERENCES feeds(id)
+    ON DELETE CASCADE,
   UNIQUE (user_id, feed_id)
 );
 

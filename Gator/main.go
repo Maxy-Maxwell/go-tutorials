@@ -76,6 +76,7 @@ func instantiateCommands() commands {
 			"login":     handlerLogin,
 			"register":  handlerRegister,
 			"reset":     handlerReset,
+			"unfollow":  middlewareLoggedIn(handlerUnfollow),
 			"users":     handlerUsers,
 		},
 	}

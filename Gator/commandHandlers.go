@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/Maxy-Maxwell/go-tutorials/Gator/internal/database"
-	rss "github.com/Maxy-Maxwell/go-tutorials/Gator/internal/rss"
+	"github.com/Maxy-Maxwell/go-tutorials/Gator/internal/rss"
 
 	"github.com/google/uuid"
 )
@@ -124,14 +124,21 @@ func handlerUsers(s *state, cmd command) error {
 }
 
 func handlerAgg(s *state, cmd command) error {
-	feed, err := rss.FetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if len(cmd.arguments) < 1 {
+		return fmt.Errorf("Agg handler expects one argument - time_between_reqs.")
+	}
+
+	duration, err := time.ParseDuration(cmd.arguments[0])
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Returned feed: %v\n", *feed)
+	fmt.Println("Collecting feeds every ", duration)
 
-	return nil
+	ticker := time.NewTicker(duration)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
 }
 
 func handlerAddFeed(s *state, cmd command, user database.User) error {
@@ -149,6 +156,11 @@ func handlerAddFeed(s *state, cmd command, user database.User) error {
 		Valid:  true,
 	}
 
+	currentTime := sql.NullTime{
+		Time:  time.Now(),
+		Valid: true,
+	}
+
 	url := sql.NullString{
 		String: cmd.arguments[1],
 		Valid:  true,
@@ -157,10 +169,11 @@ func handlerAddFeed(s *state, cmd command, user database.User) error {
 	if _, err := s.db.CreateFeed(
 		context.Background(),
 		database.CreateFeedParams{
-			ID:     feedId,
-			Name:   feedName,
-			Url:    url,
-			UserID: user.ID,
+			ID:        feedId,
+			Name:      feedName,
+			UpdatedAt: currentTime,
+			Url:       url,
+			UserID:    user.ID,
 		},
 	); err != nil {
 		return err
@@ -240,6 +253,33 @@ func handlerFollow(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+func handlerUnfollow(s *state, cmd command, user database.User) error {
+	if len(cmd.arguments) < 1 {
+		return fmt.Errorf("The Unfollow handler expects a one argument - url")
+	}
+
+	url := sql.NullString{
+		String: cmd.arguments[0],
+		Valid:  true,
+	}
+
+	// Get the feed record so we have the feed_id
+	feed, err := s.db.GetFeedByURL(context.Background(), url)
+	if err != nil {
+		return err
+	}
+
+	err = s.db.DeleteFeedFollowsForUserByFeed(
+		context.Background(),
+		database.DeleteFeedFollowsForUserByFeedParams{
+			UserID: user.ID,
+			FeedID: feed.ID,
+		},
+	)
+
+	return err
+}
+
 func handlerFollowing(s *state, cmd command, user database.User) error {
 
 	feeds, err := s.db.GetFeedFollowsForUser(
@@ -256,4 +296,50 @@ func handlerFollowing(s *state, cmd command, user database.User) error {
 	}
 
 	return nil
+}
+
+func scrapeFeeds(s *state) {
+	feed, err := s.db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		fmt.Println("Failed to get next feed to fetch:", err)
+		return
+	}
+
+	if !feed.Url.Valid {
+		fmt.Println("Feed is missing required URL: ", feed)
+		return
+	}
+
+	fetchedFeed, err := rss.FetchFeed(context.Background(), feed.Url.String)
+	if err != nil {
+		fmt.Println("Failed to fetch feed:", err)
+		return
+	}
+
+	fmt.Println("Got ourselves a feed:", fetchedFeed.Channel.Title)
+	for _, item := range fetchedFeed.Channel.Item {
+		fmt.Println("Item title:", item.Title)
+	}
+
+	currentTime := sql.NullTime{
+		Time:  time.Now(),
+		Valid: true,
+	}
+
+	fmt.Println("Updating feed with last fetched time...")
+
+	updatedFeed, err := s.db.MarkFeedFetched(
+		context.Background(),
+		database.MarkFeedFetchedParams{
+			LastFetchedAt: currentTime,
+			ID:            feed.ID,
+		},
+	)
+
+	if err != nil {
+		fmt.Println("Failed to update last_fetched_at:", err)
+	}
+
+	fmt.Println("Updated feed:", updatedFeed)
+	fmt.Println("Finished with this feed -------------------------------------------------")
 }
