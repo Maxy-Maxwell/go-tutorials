@@ -68,11 +68,11 @@ func prettyPrintConfig(c *config.Config) {
 func instantiateCommands() commands {
 	cmds := commands{
 		cmdNameToFunc: map[string]func(s *state, cmd command) error{
-			"addfeed":   handlerAddFeed,
+			"addfeed":   middlewareLoggedIn(handlerAddFeed),
 			"agg":       handlerAgg,
 			"feeds":     handlerFeeds,
-			"follow":    handlerFollow,
-			"following": handlerFollowing,
+			"follow":    middlewareLoggedIn(handlerFollow),
+			"following": middlewareLoggedIn(handlerFollowing),
 			"login":     handlerLogin,
 			"register":  handlerRegister,
 			"reset":     handlerReset,

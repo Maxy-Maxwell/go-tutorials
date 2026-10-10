@@ -12,6 +12,28 @@ import (
 	"github.com/google/uuid"
 )
 
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
+	return func(s *state, cmd command) error {
+		// Get the user record (currently logged in) so we have the user_id
+		username := sql.NullString{
+			String: s.cfg.Current_user_name,
+			Valid:  true,
+		}
+
+		user, err := s.db.GetUser(context.Background(), username)
+		if err != nil {
+			return fmt.Errorf("Failed to retrieve user with name: %v", username)
+		}
+
+		if !user.ID.Valid {
+			return fmt.Errorf("Failed to find user: %v.", username)
+		}
+
+		return handler(s, cmd, user)
+	}
+
+}
+
 func handlerLogin(s *state, cmd command) error {
 	if len(cmd.arguments) == 0 {
 		return fmt.Errorf("The login handler expects a single argument - username")
@@ -112,7 +134,7 @@ func handlerAgg(s *state, cmd command) error {
 	return nil
 }
 
-func handlerAddFeed(s *state, cmd command) error {
+func handlerAddFeed(s *state, cmd command, user database.User) error {
 	if len(cmd.arguments) < 2 {
 		return fmt.Errorf("The Add Feed handler expects a two arguments - name, url")
 	}
@@ -132,17 +154,7 @@ func handlerAddFeed(s *state, cmd command) error {
 		Valid:  true,
 	}
 
-	username := sql.NullString{
-		String: s.cfg.Current_user_name,
-		Valid:  true,
-	}
-
-	user, err := s.db.GetUser(context.Background(), username)
-	if err != nil {
-		return fmt.Errorf("Failed to retrieve user with name: %v", username)
-	}
-
-	if _, err = s.db.CreateFeed(
+	if _, err := s.db.CreateFeed(
 		context.Background(),
 		database.CreateFeedParams{
 			ID:     feedId,
@@ -160,7 +172,7 @@ func handlerAddFeed(s *state, cmd command) error {
 		name:      "follow",
 		arguments: []string{url.String},
 	}
-	return handlerFollow(s, followArgs)
+	return handlerFollow(s, followArgs, user)
 
 }
 
@@ -182,7 +194,7 @@ func handlerFeeds(s *state, cmd command) error {
 	return nil
 }
 
-func handlerFollow(s *state, cmd command) error {
+func handlerFollow(s *state, cmd command, user database.User) error {
 	if len(cmd.arguments) < 1 {
 		return fmt.Errorf("The Follow handler expects a one argument - url")
 	}
@@ -198,21 +210,6 @@ func handlerFollow(s *state, cmd command) error {
 	feed, err := s.db.GetFeedByURL(context.Background(), url)
 	if err != nil {
 		return err
-	}
-
-	// Get the user record (currently logged in) so we have the user_id
-	username := sql.NullString{
-		String: s.cfg.Current_user_name,
-		Valid:  true,
-	}
-
-	user, err := s.db.GetUser(context.Background(), username)
-	if err != nil {
-		return fmt.Errorf("Failed to retrieve user with name: %v", username)
-	}
-
-	if !user.ID.Valid || !feed.ID.Valid {
-		return fmt.Errorf("Failed to find user OR feed. User ID: %v. Feed ID: %v", user.ID, feed.ID)
 	}
 
 	// Prepare other new FeedFollow fields
@@ -243,27 +240,16 @@ func handlerFollow(s *state, cmd command) error {
 	return nil
 }
 
-func handlerFollowing(s *state, cmd command) error {
-
-	// Get the user record (currently logged in) so we have the user_id
-	username := sql.NullString{
-		String: s.cfg.Current_user_name,
-		Valid:  true,
-	}
-
-	user, err := s.db.GetUser(context.Background(), username)
-	if err != nil {
-		return fmt.Errorf("Failed to retrieve user with name: %v", username)
-	}
-
-	if !user.ID.Valid {
-		return fmt.Errorf("Failed to find user: %v.", username)
-	}
+func handlerFollowing(s *state, cmd command, user database.User) error {
 
 	feeds, err := s.db.GetFeedFollowsForUser(
 		context.Background(),
 		user.ID,
 	)
+
+	if err != nil {
+		return err
+	}
 
 	for _, feed := range feeds {
 		fmt.Println("Feed: ", feed.FeedsName)
