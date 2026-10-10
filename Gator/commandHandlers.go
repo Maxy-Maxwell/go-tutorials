@@ -117,6 +117,11 @@ func handlerAddFeed(s *state, cmd command) error {
 		return fmt.Errorf("The Add Feed handler expects a two arguments - name, url")
 	}
 
+	feedId := uuid.NullUUID{
+		UUID:  uuid.New(),
+		Valid: true,
+	}
+
 	feedName := sql.NullString{
 		String: cmd.arguments[0],
 		Valid:  true,
@@ -134,13 +139,13 @@ func handlerAddFeed(s *state, cmd command) error {
 
 	user, err := s.db.GetUser(context.Background(), username)
 	if err != nil {
-		fmt.Println("Failed to retrieve user with name:", username)
-		return err
+		return fmt.Errorf("Failed to retrieve user with name: %v", username)
 	}
 
 	if _, err = s.db.CreateFeed(
 		context.Background(),
 		database.CreateFeedParams{
+			ID:     feedId,
 			Name:   feedName,
 			Url:    url,
 			UserID: user.ID,
@@ -149,7 +154,14 @@ func handlerAddFeed(s *state, cmd command) error {
 		return err
 	}
 
-	return nil
+	// Auto-follow newly created feed
+	fmt.Println("Auto-following feed...")
+	followArgs := command{
+		name:      "follow",
+		arguments: []string{url.String},
+	}
+	return handlerFollow(s, followArgs)
+
 }
 
 func handlerFeeds(s *state, cmd command) error {
@@ -165,6 +177,96 @@ func handlerFeeds(s *state, cmd command) error {
 			feedWithUser.Url.String,
 			feedWithUser.Username.String,
 		)
+	}
+
+	return nil
+}
+
+func handlerFollow(s *state, cmd command) error {
+	if len(cmd.arguments) < 1 {
+		return fmt.Errorf("The Follow handler expects a one argument - url")
+	}
+
+	fmt.Println("Url arg: ", cmd.arguments[0])
+
+	url := sql.NullString{
+		String: cmd.arguments[0],
+		Valid:  true,
+	}
+
+	// Get the feed record so we have the feed_id
+	feed, err := s.db.GetFeedByURL(context.Background(), url)
+	if err != nil {
+		return err
+	}
+
+	// Get the user record (currently logged in) so we have the user_id
+	username := sql.NullString{
+		String: s.cfg.Current_user_name,
+		Valid:  true,
+	}
+
+	user, err := s.db.GetUser(context.Background(), username)
+	if err != nil {
+		return fmt.Errorf("Failed to retrieve user with name: %v", username)
+	}
+
+	if !user.ID.Valid || !feed.ID.Valid {
+		return fmt.Errorf("Failed to find user OR feed. User ID: %v. Feed ID: %v", user.ID, feed.ID)
+	}
+
+	// Prepare other new FeedFollow fields
+	currentTime := sql.NullTime{
+		Time:  time.Now(),
+		Valid: true,
+	}
+
+	feedFollowId := uuid.NullUUID{
+		UUID:  uuid.New(),
+		Valid: true,
+	}
+
+	// Create the new feed_follow record
+	feedFollow, err := s.db.GetFeedFollow(
+		context.Background(),
+		database.GetFeedFollowParams{
+			ID:        feedFollowId,
+			CreatedAt: currentTime,
+			UpdatedAt: currentTime,
+			UserID:    user.ID,
+			FeedID:    feed.ID,
+		},
+	)
+
+	fmt.Println("FeedFollow: ", feedFollow)
+
+	return nil
+}
+
+func handlerFollowing(s *state, cmd command) error {
+
+	// Get the user record (currently logged in) so we have the user_id
+	username := sql.NullString{
+		String: s.cfg.Current_user_name,
+		Valid:  true,
+	}
+
+	user, err := s.db.GetUser(context.Background(), username)
+	if err != nil {
+		return fmt.Errorf("Failed to retrieve user with name: %v", username)
+	}
+
+	if !user.ID.Valid {
+		return fmt.Errorf("Failed to find user: %v.", username)
+	}
+
+	feeds, err := s.db.GetFeedFollowsForUser(
+		context.Background(),
+		user.ID,
+	)
+
+	for _, feed := range feeds {
+		fmt.Println("Feed: ", feed.FeedsName)
 	}
 
 	return nil

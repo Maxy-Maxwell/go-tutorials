@@ -1,9 +1,10 @@
 -- name: CreateFeed :one
-INSERT INTO feeds (name, url, user_id)
+INSERT INTO feeds (id, name, url, user_id)
 VALUES (
     $1,
     $2,
-    $3
+    $3,
+    $4
 )
 RETURNING *;
 
@@ -17,3 +18,8 @@ SELECT
 FROM feeds
 LEFT JOIN users
   ON feeds.user_id = users.id;
+
+-- name: GetFeedByURL :one
+SELECT *
+FROM feeds
+WHERE url = $1;

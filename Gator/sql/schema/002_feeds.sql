@@ -1,5 +1,6 @@
 -- +goose Up
 CREATE TABLE feeds (
+  id UUID UNIQUE,
   name TEXT,
   url TEXT UNIQUE,
   user_id UUID,
