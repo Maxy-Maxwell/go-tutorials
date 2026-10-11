@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Maxy-Maxwell/go-tutorials/Gator/internal/database"
@@ -298,6 +299,54 @@ func handlerFollowing(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+func handlerBrowse(s *state, cmd command, user database.User) error {
+	var limitArg int64
+	var err error
+	if len(cmd.arguments) < 1 {
+		limitArg = 2
+	} else {
+		limitArg, err = strconv.ParseInt(cmd.arguments[0], 10, 32)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	feeds, err := s.db.GetFeedFollowsForUser(
+		context.Background(),
+		user.ID,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	var feedIds []uuid.UUID
+
+	for _, feed := range feeds {
+		feedIds = append(feedIds, feed.FeedID.UUID)
+	}
+
+	posts, err := s.db.GetPostsForUser(
+		context.Background(),
+		database.GetPostsForUserParams{
+			Column1: feedIds,
+			Limit:   int32(limitArg),
+		},
+	)
+
+	if err != nil {
+		return err
+	}
+
+	for _, post := range posts {
+		fmt.Println("Post: ", post)
+		fmt.Println("-----------------------------------------------------------------")
+	}
+
+	return nil
+}
+
 func scrapeFeeds(s *state) {
 	feed, err := s.db.GetNextFeedToFetch(context.Background())
 	if err != nil {
@@ -316,14 +365,63 @@ func scrapeFeeds(s *state) {
 		return
 	}
 
-	fmt.Println("Got ourselves a feed:", fetchedFeed.Channel.Title)
-	for _, item := range fetchedFeed.Channel.Item {
-		fmt.Println("Item title:", item.Title)
-	}
-
 	currentTime := sql.NullTime{
 		Time:  time.Now(),
 		Valid: true,
+	}
+
+	var posts []database.CreatePostParams
+	fmt.Println("Got ourselves a feed:", fetchedFeed.Channel.Title)
+	for _, item := range fetchedFeed.Channel.Item {
+		fmt.Println("Item title:", item.Title)
+		fmt.Println("Item PubDate", item.PubDate)
+
+		paramId := uuid.NullUUID{
+			UUID:  uuid.New(),
+			Valid: true,
+		}
+
+		parsedPubTime, err := time.Parse(time.RFC1123Z, item.PubDate)
+
+		if err != nil {
+			fmt.Println("Failed to parse PubDate:", err)
+			return
+		}
+
+		paramPublished := sql.NullTime{
+			Time:  parsedPubTime,
+			Valid: true,
+		}
+
+		paramTitle := sql.NullString{
+			String: item.Title,
+			Valid:  true,
+		}
+
+		paramDesc := sql.NullString{
+			String: item.Description,
+			Valid:  true,
+		}
+
+		paramUrl := sql.NullString{
+			String: item.Link,
+			Valid:  true,
+		}
+
+		posts = append(
+			posts,
+			database.CreatePostParams{
+				ID:          paramId,
+				CreatedAt:   currentTime,
+				UpdatedAt:   currentTime,
+				PublishedAt: paramPublished,
+				Title:       paramTitle,
+				Url:         paramUrl,
+				Description: paramDesc,
+				FeedID:      feed.ID,
+			},
+		)
+
 	}
 
 	fmt.Println("Updating feed with last fetched time...")
@@ -339,7 +437,17 @@ func scrapeFeeds(s *state) {
 	if err != nil {
 		fmt.Println("Failed to update last_fetched_at:", err)
 	}
-
 	fmt.Println("Updated feed:", updatedFeed)
+
+	// Store the posts - would be nice to bulkify this operation instead on individual inserts
+	for _, post := range posts {
+		fmt.Println("Saving Post: ", post)
+		_, err := s.db.CreatePost(context.Background(), post)
+		if err != nil {
+			fmt.Println("Failed to create post: ", err)
+			return
+		}
+	}
+
 	fmt.Println("Finished with this feed -------------------------------------------------")
 }

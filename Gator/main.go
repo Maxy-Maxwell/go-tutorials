@@ -70,6 +70,7 @@ func instantiateCommands() commands {
 		cmdNameToFunc: map[string]func(s *state, cmd command) error{
 			"addfeed":   middlewareLoggedIn(handlerAddFeed),
 			"agg":       handlerAgg,
+			"browse":    middlewareLoggedIn(handlerBrowse),
 			"feeds":     handlerFeeds,
 			"follow":    middlewareLoggedIn(handlerFollow),
 			"following": middlewareLoggedIn(handlerFollowing),
