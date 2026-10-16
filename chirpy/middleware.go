@@ -3,15 +3,21 @@ package main
 import (
 	"net/http"
 	"sync/atomic"
+
+	"github.com/Maxy-Maxwell/go-tutorials/chirpy/internal/database"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	db             *database.Queries
+	platform       string
 }
 
-func initializeApiConfig() apiConfig {
+func initializeApiConfig(dbQueries *database.Queries, platform string) apiConfig {
 	return apiConfig{
 		fileserverHits: atomic.Int32{},
+		db:             dbQueries,
+		platform:       platform,
 	}
 }
 
