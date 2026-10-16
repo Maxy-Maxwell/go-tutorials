@@ -10,9 +10,13 @@ func setupRoutes(mux *http.ServeMux, conf *apiConfig) error {
 
 	mux.Handle("/app/", conf.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir("./app")))))
 
+	// Users handlers
 	mux.HandleFunc("POST /api/users", conf.createUserHandler())
 
+	// Chirps handlers
 	mux.HandleFunc("POST /api/chirps", conf.createChirpHandler())
+	mux.HandleFunc("GET /api/chirps", conf.getChirpsHandler())
+	mux.HandleFunc("GET /api/chirps/{id}", conf.getChirpHandler())
 
 	mux.HandleFunc("GET /api/healthz", readinessHandler())
 

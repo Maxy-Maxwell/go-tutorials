@@ -117,6 +117,85 @@ func (conf *apiConfig) createChirpHandler() func(resWriter http.ResponseWriter, 
 	}
 }
 
+func (conf *apiConfig) getChirpsHandler() func(resWriter http.ResponseWriter, request *http.Request) {
+	return func(resWriter http.ResponseWriter, request *http.Request) {
+		type getChirpsResponse struct {
+			ID        uuid.UUID `json:"id"`
+			CreatedAt time.Time `json:"created_at"`
+			UpdatedAt time.Time `json:"updated_at"`
+			Body      string    `json:"body"`
+			UserID    uuid.UUID `json:"user_id"`
+		}
+
+		// Query chirps
+		allChirps, err := conf.db.GetChirps(request.Context())
+		if err != nil {
+			fmt.Println("Failed to get chirps:", err)
+			writeErrorResponse(500, resWriter, "Something went wrong")
+			return
+		}
+
+		var responseBody []getChirpsResponse
+
+		for _, chirp := range allChirps {
+			responseBody = append(responseBody, getChirpsResponse{
+				ID:        chirp.ID,
+				CreatedAt: chirp.CreatedAt,
+				UpdatedAt: chirp.UpdatedAt,
+				Body:      chirp.Body,
+				UserID:    chirp.UserID,
+			})
+		}
+
+		writeResponseBody(200, resWriter, responseBody)
+	}
+}
+
+func (conf *apiConfig) getChirpHandler() func(resWriter http.ResponseWriter, request *http.Request) {
+	return func(resWriter http.ResponseWriter, request *http.Request) {
+		type getChirpsResponse struct {
+			ID        uuid.UUID `json:"id"`
+			CreatedAt time.Time `json:"created_at"`
+			UpdatedAt time.Time `json:"updated_at"`
+			Body      string    `json:"body"`
+			UserID    uuid.UUID `json:"user_id"`
+		}
+
+		chirpId := request.PathValue("id")
+		fmt.Println("Path:", chirpId)
+
+		if chirpId == "" {
+			fmt.Println("Not chirp id found:", chirpId)
+			writeErrorResponse(500, resWriter, "Something went wrong")
+			return
+		}
+
+		parsedChirpId, err := uuid.Parse(chirpId)
+		if err != nil {
+			fmt.Println("Failed to parse chirpId into UUID: ", chirpId)
+			writeErrorResponse(500, resWriter, "Something went wrong")
+			return
+		}
+
+		// Query chirps
+		chirp, err := conf.db.GetChirpById(request.Context(), parsedChirpId)
+		if err != nil {
+			fmt.Println("Failed to get chirp:", err)
+			// technically there could be a different sql error but this works for now
+			writeErrorResponse(404, resWriter, "Not Found")
+			return
+		}
+
+		writeResponseBody(200, resWriter, getChirpsResponse{
+			ID:        chirp.ID,
+			CreatedAt: chirp.CreatedAt,
+			UpdatedAt: chirp.UpdatedAt,
+			Body:      chirp.Body,
+			UserID:    chirp.UserID,
+		})
+	}
+}
+
 func (conf *apiConfig) statsHandler() func(resWriter http.ResponseWriter, request *http.Request) {
 	return func(resWriter http.ResponseWriter, request *http.Request) {
 		fmt.Println("In stats handler")
