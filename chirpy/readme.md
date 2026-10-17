@@ -48,3 +48,4 @@ sql:
     1. Now we can reference the .env DB _URL variable with: `dbURL := os.Getenv("DB_URL")`
     2. Subsequently, we can open a db connection with `db, err := sql.Open("postgres", dbURL)`
     3. Finally, we can setup queries: `dbQueries := database.New(db)`
+5. Get Argon2 (used for hashing passwords): `go get github.com/alexedwards/argon2id`

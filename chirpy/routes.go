@@ -13,6 +13,9 @@ func setupRoutes(mux *http.ServeMux, conf *apiConfig) error {
 	// Users handlers
 	mux.HandleFunc("POST /api/users", conf.createUserHandler())
 
+	// User Login
+	mux.HandleFunc("POST /api/login", conf.createLoginHandler())
+
 	// Chirps handlers
 	mux.HandleFunc("POST /api/chirps", conf.createChirpHandler())
 	mux.HandleFunc("GET /api/chirps", conf.getChirpsHandler())
