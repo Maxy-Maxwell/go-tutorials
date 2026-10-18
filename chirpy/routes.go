@@ -17,7 +17,7 @@ func setupRoutes(mux *http.ServeMux, conf *apiConfig) error {
 	mux.HandleFunc("POST /api/login", conf.createLoginHandler())
 
 	// Chirps handlers
-	mux.HandleFunc("POST /api/chirps", conf.createChirpHandler())
+	mux.HandleFunc("POST /api/chirps", conf.middlewareJWTAuth(createChirpHandler))
 	mux.HandleFunc("GET /api/chirps", conf.getChirpsHandler())
 	mux.HandleFunc("GET /api/chirps/{id}", conf.getChirpHandler())
 

@@ -33,8 +33,11 @@ func main() {
 }
 
 func run() error {
-	// Store paltform from .env
+	// Store platform from .env
 	platform := os.Getenv("PLATFORM")
+
+	// Store JWT_Secret from .env
+	jwt_secret := os.Getenv("JWT_SECRET")
 
 	// Setup database connection:
 	dbURL := os.Getenv("DB_URL")
@@ -46,7 +49,7 @@ func run() error {
 	dbQueries := database.New(db)
 
 	// Initialize config struct. Used for keep track of total requests received, and pass the database
-	conf = initializeApiConfig(dbQueries, platform)
+	conf = initializeApiConfig(dbQueries, platform, jwt_secret)
 
 	mux := http.NewServeMux()
 

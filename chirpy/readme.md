@@ -49,3 +49,4 @@ sql:
     2. Subsequently, we can open a db connection with `db, err := sql.Open("postgres", dbURL)`
     3. Finally, we can setup queries: `dbQueries := database.New(db)`
 5. Get Argon2 (used for hashing passwords): `go get github.com/alexedwards/argon2id`
+6. Get stuff for JWT (web tokens): `go get -u github.com/golang-jwt/jwt/v5`

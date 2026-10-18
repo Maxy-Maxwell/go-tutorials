@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,93 +30,81 @@ func readinessHandler() func(resWriter http.ResponseWriter, request *http.Reques
 	}
 }
 
-func (conf *apiConfig) createChirpHandler() func(resWriter http.ResponseWriter, request *http.Request) {
-	return func(resWriter http.ResponseWriter, request *http.Request) {
-		type chirpRequest struct {
-			Body   string `json:"body"`
-			UserId string `json:"user_id"`
-		}
-
-		type chirpResponse struct {
-			ID        uuid.UUID `json:"id"`
-			CreatedAt time.Time `json:"created_at"`
-			UpdatedAt time.Time `json:"updated_at"`
-			Body      string    `json:"body"`
-			UserID    uuid.UUID `json:"user_id"`
-		}
-
-		decoder := json.NewDecoder(request.Body)
-		parsedReq := chirpRequest{}
-
-		if err := decoder.Decode(&parsedReq); err != nil {
-			fmt.Println("Failed to parse request: ", err)
-			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
-			return
-		}
-
-		if len(parsedReq.Body) > 140 {
-			fmt.Println("Chirp too long:", parsedReq.Body)
-			writeErrorResponse(http.StatusBadRequest, resWriter, "Chirp is too long")
-			return
-		}
-
-		cleanedBody := ""
-
-		for _, word := range strings.Split(parsedReq.Body, " ") {
-			compWord := strings.ToLower(word)
-			bannedWords := []string{"kerfuffle", "sharbert", "fornax"}
-
-			for _, bannedWord := range bannedWords {
-				if compWord == bannedWord {
-					word = "****"
-				}
-			}
-
-			if cleanedBody == "" {
-				cleanedBody = word
-			} else {
-				cleanedBody = cleanedBody + " " + word
-			}
-
-		}
-
-		userId, err := uuid.Parse(parsedReq.UserId)
-		if err != nil {
-			fmt.Println("Failed to parse userId:", err)
-			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
-			return
-		}
-
-		chirpId := uuid.New()
-		currentTime := time.Now()
-
-		fmt.Println("UserId: ", userId)
-
-		// Store the validated and cleaned chirp
-		newChirp, err := conf.db.CreateChirp(
-			request.Context(),
-			database.CreateChirpParams{
-				ID:        chirpId,
-				CreatedAt: currentTime,
-				UpdatedAt: currentTime,
-				Body:      cleanedBody,
-				UserID:    userId,
-			})
-
-		if err != nil {
-			fmt.Println("Failed to create chirp:", err)
-			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
-			return
-		}
-
-		writeResponseBody(http.StatusCreated, resWriter, chirpResponse{
-			ID:        newChirp.ID,
-			CreatedAt: newChirp.CreatedAt,
-			UpdatedAt: newChirp.UpdatedAt,
-			Body:      newChirp.Body,
-			UserID:    newChirp.UserID,
-		})
+func createChirpHandler(conf *apiConfig, headerUserId uuid.UUID, resWriter http.ResponseWriter, request *http.Request) {
+	type chirpRequest struct {
+		Body string `json:"body"`
 	}
+
+	type chirpResponse struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Body      string    `json:"body"`
+		UserID    uuid.UUID `json:"user_id"`
+	}
+
+	decoder := json.NewDecoder(request.Body)
+	parsedReq := chirpRequest{}
+
+	if err := decoder.Decode(&parsedReq); err != nil {
+		fmt.Println("Failed to parse request: ", err)
+		writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+		return
+	}
+
+	if len(parsedReq.Body) > 140 {
+		fmt.Println("Chirp too long:", parsedReq.Body)
+		writeErrorResponse(http.StatusBadRequest, resWriter, "Chirp is too long")
+		return
+	}
+
+	cleanedBody := ""
+
+	for _, word := range strings.Split(parsedReq.Body, " ") {
+		compWord := strings.ToLower(word)
+		bannedWords := []string{"kerfuffle", "sharbert", "fornax"}
+
+		for _, bannedWord := range bannedWords {
+			if compWord == bannedWord {
+				word = "****"
+			}
+		}
+
+		if cleanedBody == "" {
+			cleanedBody = word
+		} else {
+			cleanedBody = cleanedBody + " " + word
+		}
+
+	}
+
+	chirpId := uuid.New()
+	currentTime := time.Now()
+
+	// Store the validated and cleaned chirp
+	newChirp, err := conf.db.CreateChirp(
+		request.Context(),
+		database.CreateChirpParams{
+			ID:        chirpId,
+			CreatedAt: currentTime,
+			UpdatedAt: currentTime,
+			Body:      cleanedBody,
+			UserID:    headerUserId,
+		})
+
+	if err != nil {
+		fmt.Println("Failed to create chirp:", err)
+		writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+		return
+	}
+
+	writeResponseBody(http.StatusCreated, resWriter, chirpResponse{
+		ID:        newChirp.ID,
+		CreatedAt: newChirp.CreatedAt,
+		UpdatedAt: newChirp.UpdatedAt,
+		Body:      newChirp.Body,
+		UserID:    newChirp.UserID,
+	})
 }
 
 func (conf *apiConfig) getChirpsHandler() func(resWriter http.ResponseWriter, request *http.Request) {
@@ -163,7 +152,6 @@ func (conf *apiConfig) getChirpHandler() func(resWriter http.ResponseWriter, req
 		}
 
 		chirpId := request.PathValue("id")
-		fmt.Println("Path:", chirpId)
 
 		if chirpId == "" {
 			fmt.Println("Not chirp id found:", chirpId)
@@ -199,8 +187,6 @@ func (conf *apiConfig) getChirpHandler() func(resWriter http.ResponseWriter, req
 
 func (conf *apiConfig) statsHandler() func(resWriter http.ResponseWriter, request *http.Request) {
 	return func(resWriter http.ResponseWriter, request *http.Request) {
-		fmt.Println("In stats handler")
-
 		// Set headers
 		resWriter.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -225,19 +211,14 @@ func (conf *apiConfig) statsHandler() func(resWriter http.ResponseWriter, reques
 
 func (conf *apiConfig) resetStatsHandler() func(resWriter http.ResponseWriter, request *http.Request) {
 	return func(resWriter http.ResponseWriter, request *http.Request) {
-		fmt.Println("Checking platform...")
-		fmt.Printf("conf platform: %v\n", conf.platform)
-
 		if conf.platform != "dev" {
 			fmt.Println("Non-dev platform, returning forbidden error")
 			writeErrorResponse(http.StatusForbidden, resWriter, "Forbidden")
 			return
 		}
 
-		fmt.Println("Resetting stats...")
 		conf.fileserverHits.Store(0)
 
-		fmt.Println("Deleting users...")
 		if err := conf.db.DeleteUsers(request.Context()); err != nil {
 			fmt.Println("Failed to delete users: ", err)
 			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
@@ -257,8 +238,6 @@ func (conf *apiConfig) resetStatsHandler() func(resWriter http.ResponseWriter, r
 
 func (conf *apiConfig) createUserHandler() func(resWriter http.ResponseWriter, request *http.Request) {
 	return func(resWriter http.ResponseWriter, request *http.Request) {
-		fmt.Println("In create user handler")
-
 		type createUserRequest struct {
 			Email    string `json:"email"`
 			Password string `json:"password"`
@@ -316,8 +295,6 @@ func (conf *apiConfig) createUserHandler() func(resWriter http.ResponseWriter, r
 			return
 		}
 
-		fmt.Println("User: ", newUser)
-
 		// Create and Marshal response body
 		responseBody := createUserResponse{
 			ID:        newUser.ID,
@@ -344,11 +321,10 @@ func (conf *apiConfig) createUserHandler() func(resWriter http.ResponseWriter, r
 
 func (conf *apiConfig) createLoginHandler() func(resWriter http.ResponseWriter, request *http.Request) {
 	return func(resWriter http.ResponseWriter, request *http.Request) {
-		fmt.Println("In create user handler")
-
 		type createUserRequest struct {
-			Email    string `json:"email"`
-			Password string `json:"password"`
+			Email                 string `json:"email"`
+			Password              string `json:"password"`
+			TokenExpiresInSeconds string `json:"expires_in_seconds"`
 		}
 
 		type createUserResponse struct {
@@ -356,6 +332,7 @@ func (conf *apiConfig) createLoginHandler() func(resWriter http.ResponseWriter, 
 			CreatedAt time.Time `json:"created_at"`
 			UpdatedAt time.Time `json:"updated_at"`
 			Email     string    `json:"email"`
+			Token     string    `json:"token"`
 		}
 
 		// Get Request Body
@@ -380,6 +357,12 @@ func (conf *apiConfig) createLoginHandler() func(resWriter http.ResponseWriter, 
 			return
 		}
 
+		// Grab tokenExpiresIn and default to 1 hour if > 1 hour, not provided or negative
+		tokenExpiresIn, err := strconv.Atoi(parsedReq.TokenExpiresInSeconds)
+		if err != nil || tokenExpiresIn > int(time.Hour.Seconds()) || tokenExpiresIn < 1 {
+			tokenExpiresIn = int(time.Hour.Seconds())
+		}
+
 		// Get User by Email
 		foundUser, err := conf.db.GetUserByEmail(request.Context(), parsedReq.Email)
 		if err != nil {
@@ -387,8 +370,6 @@ func (conf *apiConfig) createLoginHandler() func(resWriter http.ResponseWriter, 
 			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
 			return
 		}
-
-		fmt.Println("User: ", foundUser)
 
 		// Ensure password matches hash
 		passwordMatches, err := auth.CheckPasswordHash(parsedReq.Password, foundUser.HashedPassword)
@@ -402,12 +383,21 @@ func (conf *apiConfig) createLoginHandler() func(resWriter http.ResponseWriter, 
 			return
 		}
 
+		// Grab a token now that we know the user is authenticated (can happen earlier, but will save work if we only do it after auth)
+		jwtToken, err := auth.MakeJWT(foundUser.ID, conf.jwt_secret, time.Duration(tokenExpiresIn)*time.Second)
+		if err != nil {
+			fmt.Println("Failed to generate token: ", err, ". UserId:", foundUser.ID)
+			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+			return
+		}
+
 		// Create and Marshal response body
 		responseBody := createUserResponse{
 			ID:        foundUser.ID,
 			CreatedAt: foundUser.CreatedAt,
 			UpdatedAt: foundUser.UpdatedAt,
 			Email:     foundUser.Email,
+			Token:     jwtToken,
 		}
 
 		responseBodyMarshalled, err := json.Marshal(responseBody)

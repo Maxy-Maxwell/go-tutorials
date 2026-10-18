@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 )
 
@@ -37,4 +39,25 @@ func writeErrorResponse(statusCode int, resWriter http.ResponseWriter, message s
 	}
 
 	resWriter.Write(responseBody)
+}
+
+func logJSONRequestBody(r *http.Request) {
+	// 1. Read the body bytes safely
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		fmt.Printf("Error reading body: %v\n", err)
+		return
+	}
+
+	// 2. Restore r.Body so it can be read again downstream
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	// 3. Pretty print the JSON payload
+	var prettyJSON bytes.Buffer
+	if err := json.Indent(&prettyJSON, bodyBytes, "", "  "); err == nil {
+		fmt.Printf("--- Request Body ---\n%s\n--------------------\n", prettyJSON.String())
+	} else {
+		// Fallback to raw string if it's not valid JSON
+		fmt.Printf("--- Raw Request Body ---\n%s\n--------------------\n", string(bodyBytes))
+	}
 }
