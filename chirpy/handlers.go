@@ -117,8 +117,25 @@ func (conf *apiConfig) getChirpsHandler() func(resWriter http.ResponseWriter, re
 			UserID    uuid.UUID `json:"user_id"`
 		}
 
-		// Query chirps
-		allChirps, err := conf.db.GetChirps(request.Context())
+		chirpOwnerId := request.URL.Query().Get("author_id")
+		var retrievedChirps []database.Chirp
+		var err error
+
+		fmt.Println("chirp owner id: ", chirpOwnerId)
+		if chirpOwnerId != "" {
+			chirpOwnerId, err := uuid.Parse(chirpOwnerId)
+			if err != nil {
+				fmt.Println("Failed to parse chirpId into UUID: ", chirpOwnerId)
+				writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+				return
+			}
+			retrievedChirps, err = conf.db.GetChirpsByUserId(request.Context(), chirpOwnerId)
+
+		} else {
+			// Query chirps
+			retrievedChirps, err = conf.db.GetChirps(request.Context())
+		}
+
 		if err != nil {
 			fmt.Println("Failed to get chirps:", err)
 			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
@@ -127,7 +144,7 @@ func (conf *apiConfig) getChirpsHandler() func(resWriter http.ResponseWriter, re
 
 		var responseBody []getChirpsResponse
 
-		for _, chirp := range allChirps {
+		for _, chirp := range retrievedChirps {
 			responseBody = append(responseBody, getChirpsResponse{
 				ID:        chirp.ID,
 				CreatedAt: chirp.CreatedAt,
