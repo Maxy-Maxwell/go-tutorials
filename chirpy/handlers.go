@@ -286,6 +286,87 @@ func (conf *apiConfig) resetStatsHandler() func(resWriter http.ResponseWriter, r
 	}
 }
 
+func (conf *apiConfig) createUpdateUserRedHandler() func(resWriter http.ResponseWriter, request *http.Request) {
+	return func(resWriter http.ResponseWriter, request *http.Request) {
+		type EventData struct {
+			UserID string `json:"user_id"`
+		}
+
+		type updateUserRedRequest struct {
+			Event string    `json:"event"`
+			Data  EventData `json:"data"`
+		}
+
+		// Ensure the header has the right api key (polka_apikey)
+		apiKey, err := auth.GetAPIKey(request.Header)
+		if err != nil {
+			fmt.Println("Failed to parse api key: ", err)
+			writeErrorResponse(http.StatusUnauthorized, resWriter, "Not Authorized")
+			return
+		}
+
+		if apiKey != conf.polka_apikey {
+			fmt.Println("Incorrect api key. Recieved: ", apiKey)
+			writeErrorResponse(http.StatusUnauthorized, resWriter, "Not Authorized")
+			return
+		}
+
+		// Get Request Body
+		decoder := json.NewDecoder(request.Body)
+		parsedReq := updateUserRedRequest{}
+
+		if err := decoder.Decode(&parsedReq); err != nil {
+			fmt.Println("Failed to parse request: ", err)
+			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+			return
+		}
+
+		if parsedReq.Event != "user.upgraded" {
+			fmt.Println("Unknown event:", parsedReq.Event)
+			writeResponseBody(http.StatusNoContent, resWriter, "")
+			return
+		}
+
+		parsedUserId, err := uuid.Parse(parsedReq.Data.UserID)
+		if err != nil {
+			fmt.Println("Failed to parse userId into UUID: ", parsedReq.Data.UserID)
+			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+			return
+		}
+
+		userRecord, err := conf.db.GetUserById(request.Context(), parsedUserId)
+		if err != nil {
+			fmt.Println("Failed to query user: ", err)
+			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+			return
+		}
+
+		if !userRecord.IsChirpyRed.Valid {
+			fmt.Println("Null or invalid IsChirpyRed: ", userRecord.IsChirpyRed)
+			writeErrorResponse(http.StatusNotFound, resWriter, "Not found")
+			return
+		}
+
+		isChirpyRed := sql.NullBool{
+			Bool:  true,
+			Valid: true,
+		}
+		_, err = conf.db.UpdateChirpyRedById(
+			request.Context(),
+			database.UpdateChirpyRedByIdParams{
+				ID:          userRecord.ID,
+				IsChirpyRed: isChirpyRed,
+			})
+		if err != nil {
+			fmt.Println("Failed to query user: ", err)
+			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+			return
+		}
+
+		writeResponseBody(http.StatusNoContent, resWriter, "")
+	}
+}
+
 func (conf *apiConfig) createUserHandler() func(resWriter http.ResponseWriter, request *http.Request) {
 	return func(resWriter http.ResponseWriter, request *http.Request) {
 		type createUserRequest struct {
@@ -294,10 +375,11 @@ func (conf *apiConfig) createUserHandler() func(resWriter http.ResponseWriter, r
 		}
 
 		type createUserResponse struct {
-			ID        uuid.UUID `json:"id"`
-			CreatedAt time.Time `json:"created_at"`
-			UpdatedAt time.Time `json:"updated_at"`
-			Email     string    `json:"email"`
+			ID          uuid.UUID `json:"id"`
+			CreatedAt   time.Time `json:"created_at"`
+			UpdatedAt   time.Time `json:"updated_at"`
+			Email       string    `json:"email"`
+			IsChirpyRed bool      `json:"is_chirpy_red"`
 		}
 
 		// Get Request Body
@@ -347,10 +429,11 @@ func (conf *apiConfig) createUserHandler() func(resWriter http.ResponseWriter, r
 
 		// Create and Marshal response body
 		responseBody := createUserResponse{
-			ID:        newUser.ID,
-			CreatedAt: newUser.CreatedAt,
-			UpdatedAt: newUser.UpdatedAt,
-			Email:     newUser.Email,
+			ID:          newUser.ID,
+			CreatedAt:   newUser.CreatedAt,
+			UpdatedAt:   newUser.UpdatedAt,
+			Email:       newUser.Email,
+			IsChirpyRed: newUser.IsChirpyRed.Bool,
 		}
 
 		responseBodyMarshalled, err := json.Marshal(responseBody)
@@ -383,6 +466,7 @@ func (conf *apiConfig) createLoginHandler() func(resWriter http.ResponseWriter, 
 			Email        string    `json:"email"`
 			Token        string    `json:"token"`
 			RefreshToken string    `json:"refresh_token"`
+			IsChirpyRed  bool      `json:"is_chirpy_red"`
 		}
 
 		// Get Request Body
@@ -461,6 +545,7 @@ func (conf *apiConfig) createLoginHandler() func(resWriter http.ResponseWriter, 
 			Email:        foundUser.Email,
 			Token:        jwtToken,
 			RefreshToken: refreshToken,
+			IsChirpyRed:  foundUser.IsChirpyRed.Bool,
 		}
 
 		responseBodyMarshalled, err := json.Marshal(responseBody)
@@ -590,10 +675,11 @@ func createUpdateUserHandler(conf *apiConfig, headerUserId uuid.UUID, resWriter 
 	}
 
 	type updateUserResponse struct {
-		ID        uuid.UUID `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		Email     string    `json:"email"`
+		ID          uuid.UUID `json:"id"`
+		CreatedAt   time.Time `json:"created_at"`
+		UpdatedAt   time.Time `json:"updated_at"`
+		Email       string    `json:"email"`
+		IsChirpyRed bool      `json:"is_chirpy_red"`
 	}
 
 	decoder := json.NewDecoder(request.Body)
@@ -633,9 +719,10 @@ func createUpdateUserHandler(conf *apiConfig, headerUserId uuid.UUID, resWriter 
 	}
 
 	writeResponseBody(http.StatusOK, resWriter, updateUserResponse{
-		ID:        headerUserId,
-		CreatedAt: updatedUser.CreatedAt,
-		UpdatedAt: updatedUser.UpdatedAt,
-		Email:     updatedUser.Email,
+		ID:          headerUserId,
+		CreatedAt:   updatedUser.CreatedAt,
+		UpdatedAt:   updatedUser.UpdatedAt,
+		Email:       updatedUser.Email,
+		IsChirpyRed: updatedUser.IsChirpyRed.Bool,
 	})
 }

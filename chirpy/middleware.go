@@ -16,14 +16,16 @@ type apiConfig struct {
 	db             *database.Queries
 	platform       string
 	jwt_secret     string
+	polka_apikey   string
 }
 
-func initializeApiConfig(dbQueries *database.Queries, platform string, jwt_secret string) apiConfig {
+func initializeApiConfig(dbQueries *database.Queries, platform string, jwt_secret string, polka_apikey string) apiConfig {
 	return apiConfig{
 		fileserverHits: atomic.Int32{},
 		db:             dbQueries,
 		platform:       platform,
 		jwt_secret:     jwt_secret,
+		polka_apikey:   polka_apikey,
 	}
 }
 

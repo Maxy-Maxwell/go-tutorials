@@ -13,6 +13,7 @@ func setupRoutes(mux *http.ServeMux, conf *apiConfig) error {
 	// Users handlers
 	mux.HandleFunc("POST /api/users", conf.createUserHandler())
 	mux.HandleFunc("PUT /api/users", conf.middlewareJWTAuth(createUpdateUserHandler))
+	mux.HandleFunc("POST /api/polka/webhooks", conf.createUpdateUserRedHandler())
 
 	// User Login
 	mux.HandleFunc("POST /api/login", conf.createLoginHandler())

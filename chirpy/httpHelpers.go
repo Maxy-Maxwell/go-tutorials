@@ -41,6 +41,18 @@ func writeErrorResponse(statusCode int, resWriter http.ResponseWriter, message s
 	resWriter.Write(responseBody)
 }
 
+func logRequestHeaders(r *http.Request) {
+	// Marshal the r.Header map into indented JSON
+	prettyHeaders, err := json.MarshalIndent(r.Header, "", "  ")
+	if err != nil {
+		fmt.Println("Error marshaling headers:", err)
+		return
+	}
+
+	// Print JSON string
+	fmt.Printf("--- Pretty JSON Headers ---\n%s\n", string(prettyHeaders))
+}
+
 func logJSONRequestBody(r *http.Request) {
 	// 1. Read the body bytes safely
 	bodyBytes, err := io.ReadAll(r.Body)

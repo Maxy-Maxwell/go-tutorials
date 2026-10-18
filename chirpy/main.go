@@ -39,6 +39,9 @@ func run() error {
 	// Store JWT_Secret from .env
 	jwt_secret := os.Getenv("JWT_SECRET")
 
+	// Store POLKA API key
+	polka_apikey := os.Getenv("POLKA_APIKEY")
+
 	// Setup database connection:
 	dbURL := os.Getenv("DB_URL")
 	db, err := sql.Open("postgres", dbURL)
@@ -49,7 +52,7 @@ func run() error {
 	dbQueries := database.New(db)
 
 	// Initialize config struct. Used for keep track of total requests received, and pass the database
-	conf = initializeApiConfig(dbQueries, platform, jwt_secret)
+	conf = initializeApiConfig(dbQueries, platform, jwt_secret, polka_apikey)
 
 	mux := http.NewServeMux()
 
