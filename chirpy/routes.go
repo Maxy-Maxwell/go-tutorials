@@ -12,14 +12,20 @@ func setupRoutes(mux *http.ServeMux, conf *apiConfig) error {
 
 	// Users handlers
 	mux.HandleFunc("POST /api/users", conf.createUserHandler())
+	mux.HandleFunc("PUT /api/users", conf.middlewareJWTAuth(createUpdateUserHandler))
 
 	// User Login
 	mux.HandleFunc("POST /api/login", conf.createLoginHandler())
+
+	// Token handlers
+	mux.HandleFunc("POST /api/refresh", conf.createRefreshTokenHandler())
+	mux.HandleFunc("POST /api/revoke", conf.createRevokeTokenHandler())
 
 	// Chirps handlers
 	mux.HandleFunc("POST /api/chirps", conf.middlewareJWTAuth(createChirpHandler))
 	mux.HandleFunc("GET /api/chirps", conf.getChirpsHandler())
 	mux.HandleFunc("GET /api/chirps/{id}", conf.getChirpHandler())
+	mux.HandleFunc("DELETE /api/chirps/{id}", conf.middlewareJWTAuth(deleteChirpHandler))
 
 	mux.HandleFunc("GET /api/healthz", readinessHandler())
 

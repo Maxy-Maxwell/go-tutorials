@@ -1,11 +1,11 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -79,7 +79,7 @@ func createChirpHandler(conf *apiConfig, headerUserId uuid.UUID, resWriter http.
 	}
 
 	chirpId := uuid.New()
-	currentTime := time.Now()
+	currentTime := time.Now().UTC()
 
 	// Store the validated and cleaned chirp
 	newChirp, err := conf.db.CreateChirp(
@@ -154,7 +154,7 @@ func (conf *apiConfig) getChirpHandler() func(resWriter http.ResponseWriter, req
 		chirpId := request.PathValue("id")
 
 		if chirpId == "" {
-			fmt.Println("Not chirp id found:", chirpId)
+			fmt.Println("No Chirp id found:", chirpId)
 			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
 			return
 		}
@@ -183,6 +183,56 @@ func (conf *apiConfig) getChirpHandler() func(resWriter http.ResponseWriter, req
 			UserID:    chirp.UserID,
 		})
 	}
+}
+
+func deleteChirpHandler(conf *apiConfig, headerUserId uuid.UUID, resWriter http.ResponseWriter, request *http.Request) {
+	chirpId := request.PathValue("id")
+
+	if chirpId == "" {
+		fmt.Println("No Chirp id found:", chirpId)
+		writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+		return
+	}
+
+	parsedChirpId, err := uuid.Parse(chirpId)
+	if err != nil {
+		fmt.Println("Failed to parse chirpId into UUID: ", chirpId)
+		writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+		return
+	}
+
+	fmt.Printf("Deleting chirp with id: %v...\n", parsedChirpId)
+
+	// We only do this to present nice error messages to the user. We could just do the delete and it'll return nil error even if the chirp doesn't exist or is owned by another user
+	queriedChirp, err := conf.db.GetChirpById(request.Context(), parsedChirpId)
+	if err != nil {
+		fmt.Println("Failed to get chirp:", err)
+		writeErrorResponse(http.StatusNotFound, resWriter, "Not Found")
+		return
+	}
+
+	if queriedChirp.UserID != headerUserId {
+		fmt.Printf("Attempted to delete another user's chirp. %v (chirp owner), %v (current user)\n", queriedChirp.UserID, headerUserId)
+		writeErrorResponse(http.StatusForbidden, resWriter, "Forbidden")
+		return
+	}
+
+	// Delete the chirp
+	err = conf.db.DeleteChirpById(request.Context(), database.DeleteChirpByIdParams{
+		ID:     parsedChirpId,
+		UserID: headerUserId,
+	})
+	if err != nil {
+		fmt.Println("Failed to delete chirp:", err)
+		writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+		return
+	}
+
+	// Set headers
+	resWriter.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	// Set status code
+	resWriter.WriteHeader(http.StatusNoContent)
 }
 
 func (conf *apiConfig) statsHandler() func(resWriter http.ResponseWriter, request *http.Request) {
@@ -273,7 +323,7 @@ func (conf *apiConfig) createUserHandler() func(resWriter http.ResponseWriter, r
 		}
 
 		userId := uuid.New()
-		currentTime := time.Now()
+		currentTime := time.Now().UTC()
 		hashedPassword, err := auth.HashPassword(parsedReq.Password)
 		if err != nil {
 			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
@@ -321,23 +371,23 @@ func (conf *apiConfig) createUserHandler() func(resWriter http.ResponseWriter, r
 
 func (conf *apiConfig) createLoginHandler() func(resWriter http.ResponseWriter, request *http.Request) {
 	return func(resWriter http.ResponseWriter, request *http.Request) {
-		type createUserRequest struct {
-			Email                 string `json:"email"`
-			Password              string `json:"password"`
-			TokenExpiresInSeconds string `json:"expires_in_seconds"`
+		type loginRequest struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
 		}
 
-		type createUserResponse struct {
-			ID        uuid.UUID `json:"id"`
-			CreatedAt time.Time `json:"created_at"`
-			UpdatedAt time.Time `json:"updated_at"`
-			Email     string    `json:"email"`
-			Token     string    `json:"token"`
+		type loginResponse struct {
+			ID           uuid.UUID `json:"id"`
+			CreatedAt    time.Time `json:"created_at"`
+			UpdatedAt    time.Time `json:"updated_at"`
+			Email        string    `json:"email"`
+			Token        string    `json:"token"`
+			RefreshToken string    `json:"refresh_token"`
 		}
 
 		// Get Request Body
 		decoder := json.NewDecoder(request.Body)
-		parsedReq := createUserRequest{}
+		parsedReq := loginRequest{}
 
 		if err := decoder.Decode(&parsedReq); err != nil {
 			fmt.Println("Failed to parse request: ", err)
@@ -355,12 +405,6 @@ func (conf *apiConfig) createLoginHandler() func(resWriter http.ResponseWriter, 
 			fmt.Println("Invalid request password: ", parsedReq.Password)
 			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
 			return
-		}
-
-		// Grab tokenExpiresIn and default to 1 hour if > 1 hour, not provided or negative
-		tokenExpiresIn, err := strconv.Atoi(parsedReq.TokenExpiresInSeconds)
-		if err != nil || tokenExpiresIn > int(time.Hour.Seconds()) || tokenExpiresIn < 1 {
-			tokenExpiresIn = int(time.Hour.Seconds())
 		}
 
 		// Get User by Email
@@ -384,20 +428,39 @@ func (conf *apiConfig) createLoginHandler() func(resWriter http.ResponseWriter, 
 		}
 
 		// Grab a token now that we know the user is authenticated (can happen earlier, but will save work if we only do it after auth)
-		jwtToken, err := auth.MakeJWT(foundUser.ID, conf.jwt_secret, time.Duration(tokenExpiresIn)*time.Second)
+		jwtToken, err := auth.MakeJWT(foundUser.ID, conf.jwt_secret, time.Duration(int(time.Hour.Seconds()))*time.Second)
 		if err != nil {
 			fmt.Println("Failed to generate token: ", err, ". UserId:", foundUser.ID)
 			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
 			return
 		}
 
+		// Get and store refresh token
+		refreshToken := auth.MakeRefreshToken()
+		currentTime := time.Now().UTC()
+
+		_, err = conf.db.CreateRefreshToken(request.Context(), database.CreateRefreshTokenParams{
+			Token:     refreshToken,
+			CreatedAt: currentTime,
+			UpdatedAt: currentTime,
+			UserID:    foundUser.ID,
+			ExpiresAt: time.Now().UTC().Add(60 * 24 * time.Hour),
+		})
+
+		if err != nil {
+			fmt.Println("Failed to create refresh token:", err)
+			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+			return
+		}
+
 		// Create and Marshal response body
-		responseBody := createUserResponse{
-			ID:        foundUser.ID,
-			CreatedAt: foundUser.CreatedAt,
-			UpdatedAt: foundUser.UpdatedAt,
-			Email:     foundUser.Email,
-			Token:     jwtToken,
+		responseBody := loginResponse{
+			ID:           foundUser.ID,
+			CreatedAt:    foundUser.CreatedAt,
+			UpdatedAt:    foundUser.UpdatedAt,
+			Email:        foundUser.Email,
+			Token:        jwtToken,
+			RefreshToken: refreshToken,
 		}
 
 		responseBodyMarshalled, err := json.Marshal(responseBody)
@@ -414,4 +477,165 @@ func (conf *apiConfig) createLoginHandler() func(resWriter http.ResponseWriter, 
 		// Set response body
 		resWriter.Write(responseBodyMarshalled)
 	}
+}
+
+func (conf *apiConfig) createRefreshTokenHandler() func(resWriter http.ResponseWriter, request *http.Request) {
+	return func(resWriter http.ResponseWriter, request *http.Request) {
+		type createRefreshTokenResponse struct {
+			Token string `json:"token"`
+		}
+
+		// Get refresh token from header
+		refreshToken, err := auth.GetBearerToken(request.Header)
+		if err != nil {
+			fmt.Println("Failed to get auth header's bearer token:", err)
+			writeErrorResponse(http.StatusUnauthorized, resWriter, "Unauthorized")
+			return
+		}
+
+		// Retrieve token from database
+		retrievedToken, err := conf.db.GetRefreshTokenByToken(request.Context(), refreshToken)
+		if err != nil {
+			fmt.Println("Failed to query refresh token:", err)
+			writeErrorResponse(http.StatusUnauthorized, resWriter, "Unauthorized")
+			return
+		}
+
+		currentTime := time.Now().UTC()
+
+		// Ensure the token isn't revoked
+		if retrievedToken.RevokedAt.Valid && retrievedToken.RevokedAt.Time.Before(currentTime) {
+			fmt.Println("Revoked token: ", retrievedToken.RevokedAt.Time)
+			writeErrorResponse(http.StatusUnauthorized, resWriter, "Unauthorized")
+			return
+		}
+
+		// Ensure token hasn't expired
+		if retrievedToken.ExpiresAt.Before(currentTime) {
+			fmt.Printf("Expired token. Expired at: %v. Time now: %v.\n", retrievedToken.ExpiresAt, time.Now().UTC())
+			writeErrorResponse(http.StatusUnauthorized, resWriter, "Unauthorized")
+			return
+		}
+
+		// Grab a new token for em
+		jwtToken, err := auth.MakeJWT(retrievedToken.UserID, conf.jwt_secret, time.Duration(int(time.Hour.Seconds()))*time.Second)
+		if err != nil {
+			fmt.Println("Failed to generate token: ", err, ". UserId:", retrievedToken.UserID)
+			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+			return
+		}
+
+		// Create and Marshal response body
+		responseBody := createRefreshTokenResponse{
+			Token: jwtToken,
+		}
+
+		responseBodyMarshalled, err := json.Marshal(responseBody)
+		if err != nil {
+			fmt.Println("Failed to marshal response: ", err)
+			writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+			return
+		}
+
+		// Set header and status code
+		resWriter.Header().Set("Content-Type", "text/html; charset=utf-8")
+		resWriter.WriteHeader(http.StatusOK)
+
+		// Set response body
+		resWriter.Write(responseBodyMarshalled)
+	}
+}
+
+func (conf *apiConfig) createRevokeTokenHandler() func(resWriter http.ResponseWriter, request *http.Request) {
+	return func(resWriter http.ResponseWriter, request *http.Request) {
+		// Get refresh token from header
+		refreshToken, err := auth.GetBearerToken(request.Header)
+		if err != nil {
+			fmt.Println("Failed to get auth header's bearer token:", err)
+			writeErrorResponse(http.StatusUnauthorized, resWriter, "Unauthorized")
+			return
+		}
+
+		revokedAt := sql.NullTime{
+			Time:  time.Now().UTC().Add(-1 * time.Second), // "-1" Not really needed, but makes me feel better when automated tests run
+			Valid: true,
+		}
+
+		// Update the refresh_tokens table to revoke token
+		_, err = conf.db.UpdateRefreshTokenByToken(
+			request.Context(),
+			database.UpdateRefreshTokenByTokenParams{
+				Token:     refreshToken,
+				UpdatedAt: time.Now().UTC(),
+				RevokedAt: revokedAt,
+			},
+		)
+
+		if err != nil {
+			fmt.Println("Error when updating refresh token: ", err)
+			writeErrorResponse(http.StatusUnauthorized, resWriter, "Unauthorized")
+			return
+		}
+
+		// Set header and status code
+		resWriter.Header().Set("Content-Type", "text/html; charset=utf-8")
+		resWriter.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func createUpdateUserHandler(conf *apiConfig, headerUserId uuid.UUID, resWriter http.ResponseWriter, request *http.Request) {
+	type updateUserRequest struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	type updateUserResponse struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Email     string    `json:"email"`
+	}
+
+	decoder := json.NewDecoder(request.Body)
+	parsedReq := updateUserRequest{}
+
+	if err := decoder.Decode(&parsedReq); err != nil {
+		fmt.Println("Failed to parse request: ", err)
+		writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+		return
+	}
+
+	// Make sure the password and email are not null
+	if parsedReq.Email == "" || parsedReq.Password == "" {
+		fmt.Println("Invalid request body. Email and Password are required.")
+		writeErrorResponse(http.StatusBadRequest, resWriter, "Invalid request body")
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(parsedReq.Password)
+	if err != nil {
+		fmt.Println("Failed to hash password: ", err)
+		writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+		return
+	}
+
+	// Get the user from the header UserID. Don't actually need this, as we can probably enforce the Id
+	updatedUser, err := conf.db.UpdateUserById(request.Context(), database.UpdateUserByIdParams{
+		ID:             headerUserId,
+		Email:          parsedReq.Email,
+		HashedPassword: hashedPassword,
+		UpdatedAt:      time.Now().UTC(),
+	})
+	if err != nil {
+		fmt.Println("Failed to update user by id: ", err)
+		writeErrorResponse(http.StatusInternalServerError, resWriter, "Something went wrong")
+		return
+	}
+
+	writeResponseBody(http.StatusOK, resWriter, updateUserResponse{
+		ID:        headerUserId,
+		CreatedAt: updatedUser.CreatedAt,
+		UpdatedAt: updatedUser.UpdatedAt,
+		Email:     updatedUser.Email,
+	})
 }

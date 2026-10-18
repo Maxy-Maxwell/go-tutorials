@@ -65,7 +65,7 @@ func handlerRegister(s *state, cmd command) error {
 	}
 
 	currentTime := sql.NullTime{
-		Time:  time.Now(),
+		Time:  time.Now().UTC(),
 		Valid: true,
 	}
 
@@ -158,7 +158,7 @@ func handlerAddFeed(s *state, cmd command, user database.User) error {
 	}
 
 	currentTime := sql.NullTime{
-		Time:  time.Now(),
+		Time:  time.Now().UTC(),
 		Valid: true,
 	}
 
@@ -228,7 +228,7 @@ func handlerFollow(s *state, cmd command, user database.User) error {
 
 	// Prepare other new FeedFollow fields
 	currentTime := sql.NullTime{
-		Time:  time.Now(),
+		Time:  time.Now().UTC(),
 		Valid: true,
 	}
 
@@ -366,7 +366,7 @@ func scrapeFeeds(s *state) {
 	}
 
 	currentTime := sql.NullTime{
-		Time:  time.Now(),
+		Time:  time.Now().UTC(),
 		Valid: true,
 	}
 

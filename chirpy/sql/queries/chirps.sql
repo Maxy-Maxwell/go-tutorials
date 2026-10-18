@@ -7,6 +7,12 @@ RETURNING *;
 -- name: DeleteChirps :exec
 DELETE FROM chirps;
 
+-- name: DeleteChirpById :exec
+DELETE FROM chirps
+WHERE
+    id = $1
+    AND user_id = $2;
+
 
 -- name: GetChirps :many
 SELECT *

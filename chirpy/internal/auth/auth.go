@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -51,14 +53,14 @@ func GetBearerToken(headers http.Header) (string, error) {
 func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:    "chirpy",
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiresIn)),
+		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(expiresIn)),
 		Subject:   userID.String(),
 	})
 
 	fmt.Println("expiresIn:", expiresIn)
-	fmt.Println("Token expiry: ", jwt.NewNumericDate(time.Now().Add(expiresIn)))
-	fmt.Println("Now: ", time.Now())
+	fmt.Println("Token expiry: ", jwt.NewNumericDate(time.Now().UTC().Add(expiresIn)))
+	fmt.Println("Now: ", time.Now().UTC())
 
 	signedToken, err := token.SignedString([]byte(tokenSecret))
 
@@ -93,7 +95,7 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 		return uuid.UUID{}, fmt.Errorf("Invalid token claims - incorrect type")
 	}
 
-	if claims.ExpiresAt.Before(time.Now()) {
+	if claims.ExpiresAt.Before(time.Now().UTC()) {
 		fmt.Println("Expired Token:", claims.ExpiresAt)
 		return uuid.UUID{}, fmt.Errorf("Expired token")
 	}
@@ -105,4 +107,10 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	}
 
 	return userID, nil
+}
+
+func MakeRefreshToken() string {
+	token := make([]byte, 32)
+	rand.Read(token)
+	return hex.EncodeToString(token)
 }
