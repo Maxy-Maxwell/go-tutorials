@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -117,6 +118,13 @@ func (conf *apiConfig) getChirpsHandler() func(resWriter http.ResponseWriter, re
 			UserID    uuid.UUID `json:"user_id"`
 		}
 
+		chirpSortOrder := request.URL.Query().Get("sort")
+		if chirpSortOrder == "" || strings.ToLower(chirpSortOrder) == "asc" {
+			chirpSortOrder = "ASC"
+		} else {
+			chirpSortOrder = "DESC"
+		}
+
 		chirpOwnerId := request.URL.Query().Get("author_id")
 		var retrievedChirps []database.Chirp
 		var err error
@@ -144,7 +152,15 @@ func (conf *apiConfig) getChirpsHandler() func(resWriter http.ResponseWriter, re
 
 		var responseBody []getChirpsResponse
 
-		for _, chirp := range retrievedChirps {
+		sortedChirps := slices.Clone(retrievedChirps)
+		slices.SortFunc(sortedChirps, func(a, b database.Chirp) int {
+			if chirpSortOrder == "DESC" {
+				return b.CreatedAt.Compare(a.CreatedAt)
+			}
+			return a.CreatedAt.Compare(b.CreatedAt)
+		})
+
+		for _, chirp := range sortedChirps {
 			responseBody = append(responseBody, getChirpsResponse{
 				ID:        chirp.ID,
 				CreatedAt: chirp.CreatedAt,
